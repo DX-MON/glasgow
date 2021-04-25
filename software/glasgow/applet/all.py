@@ -8,6 +8,7 @@ from .interface.i2c_initiator import I2CInitiatorApplet
 from .interface.i2c_target import I2CTargetApplet
 from .interface.jtag_pinout import JTAGPinoutApplet
 from .interface.jtag_probe import JTAGProbeApplet
+from .interface.jtag_analyzer import JTAGAnalyzerApplet
 from .interface.jtag_openocd import JTAGOpenOCDApplet
 from .interface.jtag_svf import JTAGSVFApplet
 from .interface.ps2_host import PS2HostApplet
