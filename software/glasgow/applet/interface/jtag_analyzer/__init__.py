@@ -154,19 +154,6 @@ class JTAGAnalyzerSubtarget(Elaboratable):
 			m.submodules.changes, self._in_fifo)
 		return m
 
-class JTAGBit:
-	def __init__(self, value, changed):
-		self._value = value
-		self._changed = changed
-
-	@property
-	def changed(self):
-		return self._changed
-
-	@property
-	def value(self):
-		return self._value
-
 class JTAGAnalyzerInterface:
 	def __init__(self, interface):
 		self.lower = interface
@@ -176,12 +163,6 @@ class JTAGAnalyzerInterface:
 		def process():
 			for octet in data:
 				bits = []
-				# for bit in range(4):
-				# 	valueMask = 1 << bit
-				# 	changeMask = 1 << (4 + bit)
-				# 	value = (octet & valueMask) >> bit
-				# 	changed = (octet & changeMask) == changeMask
-				# 	bits.append(JTAGBit(value, changed))
 				for bit in range(5):
 					valueMask = 1 << bit
 					value = (octet & valueMask) >> bit
