@@ -6,7 +6,7 @@ from nmigen.lib.cdc import FFSynchronizer
 
 from ... import *
 
-class TAPInstructions(Enum):
+class TAPInstruction(Enum):
 	idCode = 0x3
 	pdiCom = 0x7
 
@@ -38,7 +38,7 @@ class JTAGTAP(Elaboratable):
 		pdiDataIn = self.pdiDataIn
 		pdiDataOut = self.pdiDataOut
 		pdiReady = self.pdiReady
-		insn = Signal(4, decoder = TAPInstructions)
+		insn = Signal(4, decoder = TAPInstruction)
 		insnNext = Signal.like(insn)
 
 		m.d.comb += [
@@ -52,7 +52,7 @@ class JTAGTAP(Elaboratable):
 					m.d.jtag += [
 						shiftDR.eq(0),
 						shiftIR.eq(0),
-						insn.eq(TAPInstructions.idCode)
+						insn.eq(TAPInstruction.idCode),
 					]
 					m.next = "IDLE"
 			with m.State("IDLE"):
@@ -133,16 +133,16 @@ class JTAGTAP(Elaboratable):
 		with m.If(shiftDR):
 			m.d.jtag += [
 				dataIn.eq(Cat(dataIn[1:32], tdi)),
-				dataOut.eq(Cat(dataOut[1:32], tdo))
+				dataOut.eq(Cat(dataOut[1:32], tdo)),
 			]
 		with m.Elif(updateDR):
-			with m.If(insn == TAPInstructions.idCode):
+			with m.If(insn == TAPInstruction.idCode):
 				m.d.jtag += idCode.eq(dataIn)
-			with m.Elif(insn == TAPInstructions.pdiCom):
+			with m.Elif(insn == TAPInstruction.pdiCom):
 				m.d.jtag += [
 					pdiDataIn.eq(dataIn[22:32]),
 					pdiDataOut.eq(dataOut[22:32]),
-					pdiReady.eq(1)
+					pdiReady.eq(1),
 				]
 
 		with m.If(shiftIR):
@@ -150,15 +150,133 @@ class JTAGTAP(Elaboratable):
 		with m.Elif(updateIR):
 			m.d.jtag += insn.eq(insnNext)
 
+		m.d.comb += [
+			self._pads.tck_t.oe.eq(0),
+			self._pads.tms_t.oe.eq(0),
+			self._pads.tdi_t.oe.eq(0),
+			self._pads.tdo_t.oe.eq(0),
+			self._pads.srst_t.oe.eq(0),
+		]
 		return m
 
-class JTAGPDISubtarget(Elaboratable):
-	def __init__(self, pads):
-		self._pads = pads
+class PDIOpcodes(Enum):
+	(
+		LDS, LD, STS, ST,
+		LDCS, REPEAT, STCS, KEY,
+	) = range(8)
+
+	IDLE = 0xf
+
+class PDIDissector(Elaboratable):
+	def __init__(self, tap):
+		self._tap = tap
+		self.data = Signal(8)
+		self.ready = Signal()
+		self.error = Signal()
 
 	def elaborate(self, platform):
 		m = Module()
-		m.submodules.tap = JTAGTAP(self._pads)
+		pdiDataIn = Signal(9)
+		pdiDataOut = Signal(9)
+		pdiReadyNext = Signal()
+		pdiReady = Signal()
+		pdiStrobe = Signal()
+
+		parityInOK = Signal()
+		parityOutOK = Signal()
+		process = Signal()
+
+		data = self.data
+		opcode = Signal(PDIOpcodes)
+		readCount = Signal(32)
+		writeCount = Signal(32)
+		updateCounts = Signal()
+
+		m.submodules += [
+			FFSynchronizer(self._tap.pdiDataIn, pdiDataIn),
+			FFSynchronizer(self._tap.pdiDataOut, pdiDataOut),
+			FFSynchronizer(self._tap.pdiReady, pdiReadyNext),
+		]
+
+		m.d.comb += pdiStrobe.eq(pdiReadyNext & ~pdiReady)
+		m.d.sync += [
+			pdiReady.eq(pdiReadyNext),
+			process.eq(pdiStrobe),
+		]
+
+		with m.If(pdiStrobe):
+			m.d.sync += [
+				parityInOK.eq(pdiDataIn.xor() == 0),
+				parityOutOK.eq(pdiDataOut.xor() == 0),
+			]
+
+		with m.FSM():
+			with m.State("IDLE"):
+				with m.If(process):
+					m.next = "CHECK-PARITY"
+			with m.State("CHECK-PARITY"):
+				with m.If((opcode == PDIOpcodes.IDLE) | (writeCount != 0)):
+					with m.If(parityInOK):
+						m.next = "HANDLE-WRITE"
+					with m.Else():
+						m.next = "PARITY-ERROR"
+				with m.Else():
+					with m.If(parityOutOK):
+						m.next = "HANDLE-READ"
+					with m.Else():
+						m.next = "PARITY-ERROR"
+			with m.State("HANDLE-WRITE"):
+				with m.If(opcode == PDIOpcodes.IDLE):
+					m.d.sync += [
+						data.eq(pdiDataIn[0:8]),
+						opcode.eq(pdiDataIn[4:8]),
+						updateCounts.eq(1),
+					]
+				with m.Else():
+					m.d.sync += [
+						data.eq(pdiDataIn[0:8]),
+						writeCount.eq(writeCount - 1),
+					]
+				m.next = "SEND-DATA"
+			with m.State("HANDLE-READ"):
+				m.d.sync += [
+					data.eq(pdiDataOut[0:8]),
+					readCount.eq(readCount - 1),
+				]
+				m.next = "SEND-DATA"
+			with m.State("SEND-DATA"):
+				with m.If(updateCounts):
+					m.d.sync += updateCounts.eq(0)
+				with m.Elif((writeCount == 0) & (readCount == 0)):
+					m.d.sync += opcode.eq(PDIOpcodes.IDLE)
+				m.d.comb += self.ready.eq(1)
+				m.next = "IDLE"
+			with m.State("PARITY-ERROR"):
+				m.d.comb += self.error.eq(1)
+				m.d.sync += opcode.eq(PDIOpcodes.IDLE)
+				m.next = "IDLE"
+
+		#TODO: Build instruction to count handling state machine
+
+		return m
+
+class JTAGPDISubtarget(Elaboratable):
+	def __init__(self, pads, in_fifo):
+		self._pads = pads
+		self._in_fifo = in_fifo
+
+	def elaborate(self, platform):
+		m = Module()
+		tap = m.submodules.tap = JTAGTAP(self._pads)
+		pdi = m.submodules.pdi = PDIDissector(tap)
+		in_fifo = self._in_fifo
+
+		with m.If(pdi.ready & in_fifo.writable):
+			m.d.comb += [
+				in_fifo.din.eq(pdi.data),
+				in_fifo.we.eq(1),
+			]
+
 		return m
 
 class JTAGPDIInterface:
@@ -189,6 +307,7 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 		self.mux_interface = iface = target.multiplexer.claim_interface(self, args)
 		subtarget = iface.add_subtarget(JTAGPDISubtarget(
 			pads = iface.get_pads(args, pins = self.__pins),
+			in_fifo = iface.get_in_fifo(depth = 8192),
 		))
 
 	async def run(self, device, args):
