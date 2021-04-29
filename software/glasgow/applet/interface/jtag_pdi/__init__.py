@@ -185,6 +185,7 @@ class PDIDissector(Elaboratable):
 	def __init__(self, tap):
 		self._tap = tap
 		self.data = Signal(8)
+		self.sendHeader = Signal()
 		self.ready = Signal()
 		self.error = Signal()
 
@@ -202,9 +203,12 @@ class PDIDissector(Elaboratable):
 
 		data = self.data
 		opcode = Signal(PDIOpcodes)
+		args = Signal(4)
 		readCount = Signal(32)
 		writeCount = Signal(32)
+		repCount = Signal(32)
 		updateCounts = Signal()
+		updateRepeat = Signal()
 
 		m.submodules += [
 			FFSynchronizer(self._tap.pdiDataIn, pdiDataIn),
@@ -223,6 +227,12 @@ class PDIDissector(Elaboratable):
 				parityInOK.eq(pdiDataIn.xor() == 0),
 				parityOutOK.eq(pdiDataOut.xor() == 0),
 			]
+
+		m.d.comb += [
+			self.sendHeader.eq(0),
+			self.ready.eq(0),
+			self.error.eq(0),
+		]
 
 		with m.FSM():
 			with m.State("IDLE"):
@@ -243,14 +253,18 @@ class PDIDissector(Elaboratable):
 				with m.If(opcode == PDIOpcodes.IDLE):
 					m.d.sync += [
 						data.eq(pdiDataIn[0:8]),
-						opcode.eq(pdiDataIn[4:8]),
+						opcode.eq(pdiDataIn[5:8]),
 						updateCounts.eq(1),
 					]
+					m.d.comb += self.sendHeader.eq(1)
 				with m.Else():
 					m.d.sync += [
 						data.eq(pdiDataIn[0:8]),
 						writeCount.eq(writeCount - 1),
 					]
+
+				with m.If(opcode == PDIOpcodes.REPEAT):
+					m.d.comb += updateRepeat.eq(1)
 				m.next = "SEND-DATA"
 			with m.State("HANDLE-READ"):
 				m.d.sync += [
@@ -270,7 +284,106 @@ class PDIDissector(Elaboratable):
 				m.d.sync += opcode.eq(PDIOpcodes.IDLE)
 				m.next = "IDLE"
 
-		#TODO: Build instruction to count handling state machine
+		sizeA = Signal(5)
+		sizeB = Signal(5)
+		repeatData = Signal(32)
+
+		m.d.comb += [
+			sizeA.eq(args[2:4] + 1),
+			sizeB.eq(args[0:2] + 1),
+		]
+
+		with m.FSM():
+			with m.State("IDLE"):
+				with m.If(updateCounts):
+					m.d.sync += args.eq(pdiDataIn[0:4])
+					m.state = "DECODE"
+			with m.State("DECODE"):
+				with m.Switch(opcode):
+					with m.Case(PDIOpcodes.LDS):
+						m.next = "LDS"
+					with m.Case(PDIOpcodes.LD):
+						m.next = "LD"
+					with m.Case(PDIOpcodes.STS):
+						m.next = "STS"
+					with m.Case(PDIOpcodes.ST):
+						m.next = "ST"
+					with m.Case(PDIOpcodes.LDCS):
+						m.next = "LDCS"
+					with m.Case(PDIOpcodes.STCS):
+						m.next = "STCS"
+					with m.Case(PDIOpcodes.REPEAT):
+						m.next = "REPEAT"
+					with m.Case(PDIOpcodes.KEY):
+						m.next = "KEY"
+			with m.State("LDS"):
+				m.d.sync += [
+					writeCount.eq(sizeA),
+					readCount.eq(sizeB),
+				]
+				m.next = "IDLE"
+			with m.State("LD"):
+				m.d.sync += [
+					writeCount.eq(0),
+					readCount.eq((repCount + 1) * sizeB),
+					repCount.eq(0),
+				]
+				m.next = "IDLE"
+			with m.State("STS"):
+				m.d.sync += [
+					writeCount.eq(sizeA + sizeB),
+					readCount.eq(0),
+				]
+				m.next = "IDLE"
+			with m.State("ST"):
+				m.d.sync += [
+					writeCount.eq((repCount + 1) * sizeB),
+					readCount.eq(0),
+					repCount.eq(0),
+				]
+				m.next = "IDLE"
+			with m.State("LDCS"):
+				m.d.sync += [
+					writeCount.eq(0),
+					readCount.eq(1),
+				]
+				m.next = "IDLE"
+			with m.State("STCS"):
+				m.d.sync += [
+					writeCount.eq(1),
+					readCount.eq(0),
+				]
+				m.next = "IDLE"
+			with m.State("REPEAT"):
+				m.d.sync += [
+					writeCount.eq(sizeB),
+					readCount.eq(0),
+				]
+				m.next = "CAPTURE-REPEAT"
+			with m.State("KEY"):
+				m.d.sync += [
+					writeCount.eq(8),
+					readCount.eq(0),
+				]
+				m.next = "IDLE"
+
+			with m.State("CAPTURE-REPEAT"):
+				with m.If(updateRepeat):
+					m.d.sync += repeatData.eq(Cat(pdiDataIn[0:8], repeatData[0:24]))
+					with m.If(writeCount == 0):
+						m.next = "UPDATE-REPEAT"
+			with m.State("UPDATE-REPEAT"):
+				with m.Switch(args[0:2]):
+					with m.Case(0):
+						m.d.sync += repCount.eq(Cat(repeatData[0:8]))
+					with m.Case(1):
+						m.d.sync += repCount.eq(Cat(repeatData[8:16], repeatData[0:8]))
+					with m.Case(2):
+						m.d.sync += repCount.eq(Cat(repeatData[16:24], repeatData[8:16], repeatData[0:8]))
+					with m.Case(3):
+						m.d.sync += repCount.eq(Cat(repeatData[16:32],
+							repeatData[16:24], repeatData[8:16], repeatData[0:8]))
+				m.next = "IDLE"
 
 		return m
 
@@ -332,7 +445,12 @@ class JTAGPDISubtarget(Elaboratable):
 				]
 				m.next = "IDLE"
 
-		with m.If(pdi.ready):
+		with m.If(pdi.sendHeader):
+			m.d.comb += [
+				in_fifo.w_data.eq(Header.PDI),
+				in_fifo.w_en.eq(1),
+			]
+		with m.Elif(pdi.ready):
 			m.d.comb += [
 				in_fifo.w_data.eq(pdi.data),
 				in_fifo.w_en.eq(1),
