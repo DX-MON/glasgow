@@ -53,6 +53,8 @@ class JTAGTAP(Elaboratable):
 		m.d.comb += [
 			updateDR.eq(0),
 			updateIR.eq(0),
+			idCodeReady.eq(0),
+			pdiReady.eq(0),
 		]
 
 		with m.FSM(domain = 'jtag'):
@@ -66,10 +68,6 @@ class JTAGTAP(Elaboratable):
 					m.next = "IDLE"
 			with m.State("IDLE"):
 				with m.If(tms):
-					m.d.jtag += [
-						pdiReady.eq(0),
-						idCodeReady.eq(0),
-					]
 					m.next = "SELECT-DR"
 
 			with m.State("SELECT-DR"):
@@ -149,16 +147,14 @@ class JTAGTAP(Elaboratable):
 			]
 		with m.Elif(updateDR):
 			with m.If(insn == TAPInstruction.idCode):
-				m.d.jtag += [
-					idCode.eq(dataIn),
-					idCodeReady.eq(1),
-				]
+				m.d.jtag += idCode.eq(dataIn)
+				m.d.comb += idCodeReady.eq(1),
 			with m.Elif(insn == TAPInstruction.pdiCom):
 				m.d.jtag += [
 					pdiDataIn.eq(dataIn[22:32]),
 					pdiDataOut.eq(dataOut[22:32]),
-					pdiReady.eq(1),
 				]
+				m.d.comb += pdiReady.eq(1)
 
 		with m.If(shiftIR):
 			m.d.jtag += insnNext.eq(Cat(insnNext[1:4], tdi))
@@ -408,13 +404,17 @@ class JTAGPDISubtarget(Elaboratable):
 		idCodeReady = Signal()
 		idCodeStrobe = Signal()
 
-		m.d.comb += idCodeStrobe.eq(idCodeReadyNext & ~idCodeReady)
+		m.d.comb += idCodeStrobe.eq(~idCodeReadyNext & idCodeReady)
 		m.d.sync += idCodeReady.eq(idCodeReadyNext)
 
 		with m.FSM():
 			with m.State("IDLE"):
 				with m.If(idCodeStrobe):
 					m.next = "IDCODE-HEADER"
+				with m.Elif(pdi.sendHeader):
+					m.next = "PDI-HEADER"
+				with m.Elif(pdi.ready):
+					m.next = "PDI-DATA"
 			with m.State("IDCODE-HEADER"):
 				m.d.comb += [
 					in_fifo.w_data.eq(Header.IDCode),
@@ -445,17 +445,18 @@ class JTAGPDISubtarget(Elaboratable):
 					in_fifo.w_en.eq(1),
 				]
 				m.next = "IDLE"
-
-		with m.If(pdi.sendHeader):
-			m.d.comb += [
-				in_fifo.w_data.eq(Header.PDI),
-				in_fifo.w_en.eq(1),
-			]
-		with m.Elif(pdi.ready):
-			m.d.comb += [
-				in_fifo.w_data.eq(pdi.data),
-				in_fifo.w_en.eq(1),
-			]
+			with m.State("PDI-HEADER"):
+				m.d.comb += [
+					in_fifo.w_data.eq(Header.PDI),
+					in_fifo.w_en.eq(1),
+				]
+				m.next = "IDLE"
+			with m.State("PDI-DATA"):
+				m.d.comb += [
+					in_fifo.w_data.eq(pdi.data),
+					in_fifo.w_en.eq(1),
+				]
+				m.next = "IDLE"
 
 		return m
 
