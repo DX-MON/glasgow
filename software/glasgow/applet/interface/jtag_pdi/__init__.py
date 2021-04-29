@@ -13,6 +13,8 @@ class TAPInstruction(Enum):
 class JTAGTAP(Elaboratable):
 	def __init__(self, pads):
 		self._pads = pads
+		self.idCode = Signal(32)
+		self.idCodeReady = Signal()
 		self.pdiDataIn = Signal(9)
 		self.pdiDataOut = Signal(9)
 		self.pdiReady = Signal()
@@ -35,11 +37,17 @@ class JTAGTAP(Elaboratable):
 		dataIn = Signal(32)
 		dataOut = Signal(32)
 		idCode = Signal(32)
+		idCodeReady = Signal()
 		pdiDataIn = self.pdiDataIn
 		pdiDataOut = self.pdiDataOut
 		pdiReady = self.pdiReady
 		insn = Signal(4, decoder = TAPInstruction)
 		insnNext = Signal.like(insn)
+
+		m.submodules += [
+			FFSynchronizer(idCode, self.idCode),
+			FFSynchronizer(idCodeReady, self.idCodeReady),
+		]
 
 		m.d.comb += [
 			updateDR.eq(0),
@@ -57,7 +65,10 @@ class JTAGTAP(Elaboratable):
 					m.next = "IDLE"
 			with m.State("IDLE"):
 				with m.If(tms):
-					m.d.jtag += pdiReady.eq(0)
+					m.d.jtag += [
+						pdiReady.eq(0),
+						idCodeReady.eq(0),
+					]
 					m.next = "SELECT-DR"
 
 			with m.State("SELECT-DR"):
@@ -137,7 +148,10 @@ class JTAGTAP(Elaboratable):
 			]
 		with m.Elif(updateDR):
 			with m.If(insn == TAPInstruction.idCode):
-				m.d.jtag += idCode.eq(dataIn)
+				m.d.jtag += [
+					idCode.eq(dataIn),
+					idCodeReady.eq(1),
+				]
 			with m.Elif(insn == TAPInstruction.pdiCom):
 				m.d.jtag += [
 					pdiDataIn.eq(dataIn[22:32]),
@@ -260,6 +274,11 @@ class PDIDissector(Elaboratable):
 
 		return m
 
+class Header(Enum):
+	IDCode = 0x10
+	PDI = 0x11
+	Error = 0x1F
+
 class JTAGPDISubtarget(Elaboratable):
 	def __init__(self, pads, in_fifo):
 		self._pads = pads
@@ -271,10 +290,52 @@ class JTAGPDISubtarget(Elaboratable):
 		pdi = m.submodules.pdi = PDIDissector(tap)
 		in_fifo = self._in_fifo
 
-		with m.If(pdi.ready & in_fifo.writable):
+		idCodeReadyNext = tap.idCodeReady
+		idCodeReady = Signal()
+		idCodeStrobe = Signal()
+
+		m.d.comb += idCodeStrobe.eq(idCodeReadyNext & ~idCodeReady)
+		m.d.sync += idCodeReady.eq(idCodeReadyNext)
+
+		with m.FSM():
+			with m.State("IDLE"):
+				with m.If(idCodeStrobe):
+					m.next = "IDCODE-HEADER"
+			with m.State("IDCODE-HEADER"):
+				m.d.comb += [
+					in_fifo.w_data.eq(Header.IDCode),
+					in_fifo.w_en.eq(1),
+				]
+				m.next = "IDCODE-DATA-3"
+			with m.State("IDCODE-DATA-3"):
+				m.d.comb += [
+					in_fifo.w_data.eq(tap.idCode[24:32]),
+					in_fifo.w_en.eq(1),
+				]
+				m.next = "IDCODE-DATA-2"
+			with m.State("IDCODE-DATA-2"):
+				m.d.comb += [
+					in_fifo.w_data.eq(tap.idCode[16:24]),
+					in_fifo.w_en.eq(1),
+				]
+				m.next = "IDCODE-DATA-1"
+			with m.State("IDCODE-DATA-1"):
+				m.d.comb += [
+					in_fifo.w_data.eq(tap.idCode[8:16]),
+					in_fifo.w_en.eq(1),
+				]
+				m.next = "IDCODE-DATA-0"
+			with m.State("IDCODE-DATA-0"):
+				m.d.comb += [
+					in_fifo.w_data.eq(tap.idCode[0:8]),
+					in_fifo.w_en.eq(1),
+				]
+				m.next = "IDLE"
+
+		with m.If(pdi.ready):
 			m.d.comb += [
-				in_fifo.din.eq(pdi.data),
-				in_fifo.we.eq(1),
+				in_fifo.w_data.eq(pdi.data),
+				in_fifo.w_en.eq(1),
 			]
 
 		return m
