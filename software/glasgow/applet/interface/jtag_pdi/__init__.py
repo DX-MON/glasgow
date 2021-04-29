@@ -1,5 +1,6 @@
 import logging
 import argparse
+from vcd import VCDWriter
 from enum import Enum
 from nmigen import *
 from nmigen.lib.cdc import FFSynchronizer
@@ -463,7 +464,11 @@ class JTAGPDIInterface:
 		self.lower = interface
 
 	async def read(self):
-		pass
+		data = await self.lower.read()
+		def process():
+			for octet in data:
+				yield octet
+		return process()
 
 class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 	logger = logging.getLogger(__name__)
@@ -492,6 +497,29 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 	async def run(self, device, args):
 		iface = await device.demultiplexer.claim_interface(self, self.mux_interface, args)
 		return JTAGPDIInterface(iface)
+
+	@classmethod
+	def add_interact_arguments(cls, parser):
+		parser.add_argument(
+			"file", metavar = "VCD-FILE", type = argparse.FileType("w"),
+			help = "write VCD waveforms to VCD-FILE")
+
+	async def interact(self, device, args, iface):
+		vcd_writer = VCDWriter(args.file, timescale = "1 ns", check_values = False)
+		pdiClk = vcd_writer.register_var(scope = "", name = "pdiClk", var_type = "wire", size = 1, init = 1)
+		pdiData = vcd_writer.register_var(scope = "", name = "pdiData", var_type = "wire", size = 8, init = 0)
+
+		cycle = 0
+		try:
+			while True:
+				for byte in await iface.read():
+					vcd_writer.change(pdiClk, cycle, 0)
+					vcd_writer.change(pdiData, cycle, byte)
+					cycle += 1
+					vcd_writer.change(pdiClk, cycle, 1)
+					cycle += 1
+		finally:
+			vcd_writer.close(cycle)
 
 # -------------------------------------------------------------------------------------------------
 
