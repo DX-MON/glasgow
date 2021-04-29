@@ -77,10 +77,10 @@ class JTAGTAP(Elaboratable):
 					m.next = "CAPTURE-DR"
 			with m.State("CAPTURE-DR"):
 				with m.If(tms):
+					m.next = "EXIT1-DR"
+				with m.Else():
 					m.d.jtag += shiftDR.eq(1)
 					m.next = "SHIFT-DR"
-				with m.Else():
-					m.next = "EXIT1-DR"
 			with m.State("SHIFT-DR"):
 				with m.If(tms):
 					m.d.jtag += shiftDR.eq(0)
@@ -109,13 +109,13 @@ class JTAGTAP(Elaboratable):
 				with m.If(tms):
 					m.next = "RESET"
 				with m.Else():
-					m.next = "CAPTURE-DR"
+					m.next = "CAPTURE-IR"
 			with m.State("CAPTURE-IR"):
 				with m.If(tms):
+					m.next = "EXIT1-IR"
+				with m.Else():
 					m.d.jtag += shiftIR.eq(1)
 					m.next = "SHIFT-IR"
-				with m.Else():
-					m.next = "EXIT1-IR"
 			with m.State("SHIFT-IR"):
 				with m.If(tms):
 					m.d.jtag += shiftIR.eq(0)
@@ -147,12 +147,12 @@ class JTAGTAP(Elaboratable):
 			]
 		with m.Elif(updateDR):
 			with m.If(insn == TAPInstruction.idCode):
-				m.d.jtag += idCode.eq(dataIn)
+				m.d.jtag += idCode.eq(dataOut)
 				m.d.comb += idCodeReady.eq(1),
 			with m.Elif(insn == TAPInstruction.pdiCom):
 				m.d.jtag += [
-					pdiDataIn.eq(dataIn[22:32]),
-					pdiDataOut.eq(dataOut[22:32]),
+					pdiDataIn.eq(dataIn[23:32]),
+					pdiDataOut.eq(dataOut[23:32]),
 				]
 				m.d.comb += pdiReady.eq(1)
 
@@ -196,7 +196,6 @@ class PDIDissector(Elaboratable):
 
 		parityInOK = Signal()
 		parityOutOK = Signal()
-		process = Signal()
 
 		data = self.data
 		opcode = Signal(PDIOpcodes)
@@ -214,26 +213,22 @@ class PDIDissector(Elaboratable):
 		]
 
 		m.d.comb += pdiStrobe.eq(pdiReadyNext & ~pdiReady)
-		m.d.sync += [
-			pdiReady.eq(pdiReadyNext),
-			process.eq(pdiStrobe),
-		]
-
-		with m.If(pdiStrobe):
-			m.d.sync += [
-				parityInOK.eq(pdiDataIn.xor() == 0),
-				parityOutOK.eq(pdiDataOut.xor() == 0),
-			]
+		m.d.sync += pdiReady.eq(pdiReadyNext)
 
 		m.d.comb += [
+			parityInOK.eq(pdiDataIn.xor() == 0),
+			parityOutOK.eq(pdiDataOut.xor() == 0),
 			self.sendHeader.eq(0),
 			self.ready.eq(0),
 			self.error.eq(0),
 		]
 
-		with m.FSM():
+		with m.FSM(name = "pdiFSM"):
+			with m.State("RESET"):
+				m.d.sync += opcode.eq(PDIOpcodes.IDLE)
+				m.next = "IDLE"
 			with m.State("IDLE"):
-				with m.If(process):
+				with m.If(pdiStrobe):
 					m.next = "CHECK-PARITY"
 			with m.State("CHECK-PARITY"):
 				with m.If((opcode == PDIOpcodes.IDLE) | (writeCount != 0)):
@@ -290,11 +285,11 @@ class PDIDissector(Elaboratable):
 			sizeB.eq(args[0:2] + 1),
 		]
 
-		with m.FSM():
+		with m.FSM(name = "insnFSM"):
 			with m.State("IDLE"):
 				with m.If(updateCounts):
 					m.d.sync += args.eq(pdiDataIn[0:4])
-					m.state = "DECODE"
+					m.next = "DECODE"
 			with m.State("DECODE"):
 				with m.Switch(opcode):
 					with m.Case(PDIOpcodes.LDS):
@@ -450,7 +445,10 @@ class JTAGPDISubtarget(Elaboratable):
 					in_fifo.w_data.eq(Header.PDI),
 					in_fifo.w_en.eq(1),
 				]
-				m.next = "IDLE"
+				with m.If(pdi.ready):
+					m.next = "PDI-DATA"
+				with m.Else():
+					m.next = "IDLE"
 			with m.State("PDI-DATA"):
 				m.d.comb += [
 					in_fifo.w_data.eq(pdi.data),
