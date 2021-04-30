@@ -1,13 +1,13 @@
 import logging
 import argparse
 from vcd import VCDWriter
-from enum import Enum
+from enum import IntEnum
 from nmigen import *
 from nmigen.lib.cdc import FFSynchronizer
 
 from ... import *
 
-class TAPInstruction(Enum):
+class TAPInstruction(IntEnum):
 	idCode = 0x3
 	pdiCom = 0x7
 
@@ -20,7 +20,7 @@ class JTAGTAP(Elaboratable):
 		self.pdiDataOut = Signal(9)
 		self.pdiReady = Signal()
 
-	def elaborate(self, platform):
+	def elaborate(self, platform) -> Module:
 		m = Module()
 		tck = self._pads.tck_t.i
 		tms = self._pads.tms_t.i
@@ -170,7 +170,7 @@ class JTAGTAP(Elaboratable):
 		]
 		return m
 
-class PDIOpcodes(Enum):
+class PDIOpcodes(IntEnum):
 	(
 		LDS, LD, STS, ST,
 		LDCS, REPEAT, STCS, KEY,
@@ -179,14 +179,14 @@ class PDIOpcodes(Enum):
 	IDLE = 0xf
 
 class PDIDissector(Elaboratable):
-	def __init__(self, tap):
+	def __init__(self, tap : JTAGTAP):
 		self._tap = tap
 		self.data = Signal(8)
 		self.sendHeader = Signal()
 		self.ready = Signal()
 		self.error = Signal()
 
-	def elaborate(self, platform):
+	def elaborate(self, platform) -> Module:
 		m = Module()
 		pdiDataIn = Signal(9)
 		pdiDataOut = Signal(9)
@@ -379,7 +379,7 @@ class PDIDissector(Elaboratable):
 
 		return m
 
-class Header(Enum):
+class Header(IntEnum):
 	IDCode = 0x10
 	PDI = 0x11
 	Error = 0x1F
@@ -389,7 +389,7 @@ class JTAGPDISubtarget(Elaboratable):
 		self._pads = pads
 		self._in_fifo = in_fifo
 
-	def elaborate(self, platform):
+	def elaborate(self, platform) -> Module:
 		m = Module()
 		tap = m.submodules.tap = JTAGTAP(self._pads)
 		pdi = m.submodules.pdi = PDIDissector(tap)
