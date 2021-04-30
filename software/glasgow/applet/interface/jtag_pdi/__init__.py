@@ -541,13 +541,13 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 		return sizeB, sizeA
 
 	def _handle_ld(self, sizeA, sizeB, repCount):
-		return sizeB * repCount, 0
+		return sizeB * (repCount + 1), 0
 
 	def _handle_sts(self, sizeA, sizeB, repCount):
 		return 0, sizeA + sizeB
 
 	def _handle_st(self, sizeA, sizeB, repCount):
-		return 0, sizeB * repCount
+		return 0, sizeB * (repCount + 1)
 
 	def _handle_ldcs(self, sizeA, sizeB, repCount):
 		return 1, 0
@@ -571,6 +571,7 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 		for byte in range(byteCount):
 			value = (count >> (8 * byte)) & 0xFF
 			result |= value << (8 * (byteCount - byte - 1))
+		return result
 
 	async def _write_pdi_vcd(self, file, iface):
 		vcd_writer = VCDWriter(file, timescale = "1 ns", check_values = False)
@@ -603,20 +604,22 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 						readCount, writeCount = self._decode_counts(pdiInsn, byte & 0x0F, repCount)
 						if pdiInsn == PDIOpcodes.LD or pdiInsn == PDIOpcodes.ST:
 							repCount = 0
-						continue
-
-					if writeCount != 0:
-						writeCount -= 1
 					else:
-						readCount -= 1
+						if writeCount != 0:
+							writeCount -= 1
+						else:
+							readCount -= 1
 
-					if operation == PDIOpcodes.REPEAT:
-						repCount <<= 8
-						repCount |= byte
-						repBytes += 1
-						if writeCount == 0:
-							repCount = self._reverse_count(repCount, repBytes)
-							repBytes = 0
+						if pdiInsn == PDIOpcodes.REPEAT:
+							repCount <<= 8
+							repCount |= byte
+							repBytes += 1
+							if writeCount == 0:
+								repCount = self._reverse_count(repCount, repBytes)
+								repBytes = 0
+
+						if readCount == 0 and writeCount == 0:
+							operation = 0
 
 					vcd_writer.change(pdiClk, cycle, 0)
 					vcd_writer.change(pdiData, cycle, 0)
