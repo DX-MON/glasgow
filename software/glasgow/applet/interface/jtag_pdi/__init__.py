@@ -221,6 +221,7 @@ class PDIDissector(Elaboratable):
 			self.sendHeader.eq(0),
 			self.ready.eq(0),
 			self.error.eq(0),
+			updateRepeat.eq(0),
 		]
 
 		with m.FSM(name = "pdiFSM"):
@@ -362,7 +363,7 @@ class PDIDissector(Elaboratable):
 			with m.State("CAPTURE-REPEAT"):
 				with m.If(updateRepeat):
 					m.d.sync += repeatData.eq(Cat(pdiDataIn[0:8], repeatData[0:24]))
-					with m.If(writeCount == 0):
+					with m.If(writeCount == 1):
 						m.next = "UPDATE-REPEAT"
 			with m.State("UPDATE-REPEAT"):
 				with m.Switch(args[0:2]):
