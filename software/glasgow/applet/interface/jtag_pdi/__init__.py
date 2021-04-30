@@ -479,7 +479,7 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 	__pins = ("tck", "tms", "tdi", "tdo", "srst")
 
 	@classmethod
-	def add_build_arguments(cls, parser, access):
+	def add_build_arguments(cls, parser : argparse.ArgumentParser, access):
 		super().add_build_arguments(parser, access)
 
 		for pin in ("tdi", "tms", "tdo", "tck"):
@@ -498,17 +498,21 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 		return JTAGPDIInterface(iface)
 
 	@classmethod
-	def add_interact_arguments(cls, parser):
-		parser.add_argument(
-			"file", metavar = "VCD-FILE", type = argparse.FileType("w"),
+	def add_interact_arguments(cls, parser : argparse.ArgumentParser):
+		g_output = parser.add_mutually_exclusive_group()
+		g_output.add_argument(
+			"--raw-vcd", metavar = "VCD-FILE", type = argparse.FileType("w"), dest = "raw_file",
+			help = "write VCD waveforms to VCD-FILE")
+		g_output.add_argument(
+			"--pdi-vcd", metavar = "VCD-FILE", type = argparse.FileType("w"), dest = "pdi_file",
 			help = "write VCD waveforms to VCD-FILE")
 
-	async def interact(self, device, args, iface):
-		vcd_writer = VCDWriter(args.file, timescale = "1 ns", check_values = False)
+	async def write_raw_vcd(self, file, iface):
+		vcd_writer = VCDWriter(file, timescale = "1 ns", check_values = False)
 		pdiClk = vcd_writer.register_var(scope = "", name = "pdiClk", var_type = "wire", size = 1, init = 1)
-		pdiData = vcd_writer.register_var(scope = "", name = "pdiData", var_type = "wire", size = 8, init = 0)
+		pdiData = vcd_writer.register_var(scope = "", name = "pdiData", var_type = "wire", size = 8)
 
-		cycle = 0
+		cycle = 1
 		try:
 			while True:
 				for byte in await iface.read():
@@ -520,6 +524,10 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 		finally:
 			vcd_writer.close(cycle)
 
+
+	async def interact(self, device, args, iface):
+		if args.raw_file:
+			await self.write_raw_vcd(args.raw_file, iface)
 # -------------------------------------------------------------------------------------------------
 
 class PDIAppletTestCase(GlasgowAppletTestCase, applet=JTAGPDIApplet):
