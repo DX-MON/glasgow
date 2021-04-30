@@ -212,7 +212,7 @@ class PDIDissector(Elaboratable):
 			FFSynchronizer(self._tap.pdiReady, pdiReadyNext),
 		]
 
-		m.d.comb += pdiStrobe.eq(pdiReadyNext & ~pdiReady)
+		m.d.comb += pdiStrobe.eq(~pdiReadyNext & pdiReady)
 		m.d.sync += pdiReady.eq(pdiReadyNext)
 
 		m.d.comb += [
