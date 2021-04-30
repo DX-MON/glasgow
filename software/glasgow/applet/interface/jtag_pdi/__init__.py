@@ -478,6 +478,19 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 
 	__pins = ("tck", "tms", "tdi", "tdo", "srst")
 
+	def __init__(self, *args, **kwargs):
+		super().__init__(*args, **kwargs)
+		self._pdi_handlers = {
+			PDIOpcodes.LDS: self._handle_lds,
+			PDIOpcodes.LD: self._handle_ld,
+			PDIOpcodes.STS: self._handle_sts,
+			PDIOpcodes.ST: self._handle_st,
+			PDIOpcodes.LDCS: self._handle_ldcs,
+			PDIOpcodes.STCS: self._handle_stcs,
+			PDIOpcodes.REPEAT: self._handle_repeat,
+			PDIOpcodes.KEY: self._handle_key,
+		}
+
 	@classmethod
 	def add_build_arguments(cls, parser : argparse.ArgumentParser, access):
 		super().add_build_arguments(parser, access)
@@ -507,7 +520,7 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 			"--pdi-vcd", metavar = "VCD-FILE", type = argparse.FileType("w"), dest = "pdi_file",
 			help = "write VCD waveforms to VCD-FILE")
 
-	async def write_raw_vcd(self, file, iface):
+	async def _write_raw_vcd(self, file, iface):
 		vcd_writer = VCDWriter(file, timescale = "1 ns", check_values = False)
 		pdiClk = vcd_writer.register_var(scope = "", name = "pdiClk", var_type = "wire", size = 1, init = 1)
 		pdiData = vcd_writer.register_var(scope = "", name = "pdiData", var_type = "wire", size = 8)
@@ -524,10 +537,124 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 		finally:
 			vcd_writer.close(cycle)
 
+	def _handle_lds(self, sizeA, sizeB, repCount):
+		return sizeB, sizeA
+
+	def _handle_ld(self, sizeA, sizeB, repCount):
+		return sizeB * repCount, 0
+
+	def _handle_sts(self, sizeA, sizeB, repCount):
+		return 0, sizeA + sizeB
+
+	def _handle_st(self, sizeA, sizeB, repCount):
+		return 0, sizeB * repCount
+
+	def _handle_ldcs(self, sizeA, sizeB, repCount):
+		return 1, 0
+
+	def _handle_stcs(self, sizeA, sizeB, repCount):
+		return 0, 1
+
+	def _handle_repeat(self, sizeA, sizeB, repCount):
+		return 0, sizeB
+
+	def _handle_key(self, sizeA, sizeB, repCount):
+		return 0, 8
+
+	def _decode_counts(self, insn, args, repCount):
+		sizeA = ((args & 0x0C) >> 2) + 1
+		sizeB = (args & 0x03) + 1
+		return self._pdi_handlers[insn](sizeA, sizeB, repCount)
+
+	def _reverse_count(self, count, byteCount):
+		result = 0
+		for byte in range(byteCount):
+			value = (count >> (8 * byte)) & 0xFF
+			result |= value << (8 * (byteCount - byte - 1))
+
+	async def _write_pdi_vcd(self, file, iface):
+		vcd_writer = VCDWriter(file, timescale = "1 ns", check_values = False)
+		pdiClk = vcd_writer.register_var(scope = "", name = "pdiClk", var_type = "wire", size = 1, init = 1)
+		pdiData = vcd_writer.register_var(scope = "", name = "pdiData", var_type = "wire", size = 1, init = 1)
+
+		cycle = 1
+		operation = 0
+		count = 4
+		pdiInsn = PDIOpcodes.IDLE
+		readCount = 0
+		writeCount = 0
+		repCount = 0
+		repBytes = 0
+
+		try:
+			while True:
+				for byte in await iface.read():
+					if operation == 0:
+						operation = byte
+						continue
+					elif operation == Header.IDCode:
+						count -= 1
+						if count == 0:
+							operation = 0
+							count = 4
+						continue
+					elif operation == Header.PDI and (readCount == 0 and writeCount == 0):
+						pdiInsn = (byte & 0xE0) >> 5
+						readCount, writeCount = self._decode_counts(pdiInsn, byte & 0x0F, repCount)
+						if pdiInsn == PDIOpcodes.LD or pdiInsn == PDIOpcodes.ST:
+							repCount = 0
+						continue
+
+					if writeCount != 0:
+						writeCount -= 1
+					else:
+						readCount -= 1
+
+					if operation == PDIOpcodes.REPEAT:
+						repCount <<= 8
+						repCount |= byte
+						repBytes += 1
+						if writeCount == 0:
+							repCount = self._reverse_count(repCount, repBytes)
+							repBytes = 0
+
+					vcd_writer.change(pdiClk, cycle, 0)
+					vcd_writer.change(pdiData, cycle, 0)
+					cycle += 1
+					vcd_writer.change(pdiClk, cycle, 1)
+					cycle += 1
+					parity = 0
+					for i in range(8):
+						bit = (byte >> i) & 1
+						parity ^= bit
+						vcd_writer.change(pdiClk, cycle, 0)
+						vcd_writer.change(pdiData, cycle, bit)
+						cycle += 1
+						vcd_writer.change(pdiClk, cycle, 1)
+						cycle += 1
+					vcd_writer.change(pdiClk, cycle, 0)
+					vcd_writer.change(pdiData, cycle, parity)
+					cycle += 1
+					vcd_writer.change(pdiClk, cycle, 1)
+					cycle += 1
+					vcd_writer.change(pdiClk, cycle, 0)
+					vcd_writer.change(pdiData, cycle, 1)
+					cycle += 1
+					vcd_writer.change(pdiClk, cycle, 1)
+					cycle += 1
+					vcd_writer.change(pdiClk, cycle, 0)
+					cycle += 1
+					vcd_writer.change(pdiClk, cycle, 1)
+					cycle += 1
+		finally:
+			vcd_writer.close(cycle)
 
 	async def interact(self, device, args, iface):
 		if args.raw_file:
-			await self.write_raw_vcd(args.raw_file, iface)
+			await self._write_raw_vcd(args.raw_file, iface)
+		elif args.pdi_file:
+			await self._write_pdi_vcd(args.pdi_file, iface)
+
 # -------------------------------------------------------------------------------------------------
 
 class PDIAppletTestCase(GlasgowAppletTestCase, applet=JTAGPDIApplet):
