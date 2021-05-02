@@ -3,7 +3,7 @@ from nmigen.lib.cdc import FFSynchronizer
 from . import TAPInstruction, PDIOpcodes, Header
 
 class JTAGTAP(Elaboratable):
-	def __init__(self, pads):
+	def __init__(self, *, pads):
 		self._pads = pads
 		self.idCode = Signal(32)
 		self.idCodeReady = Signal()
@@ -162,7 +162,7 @@ class JTAGTAP(Elaboratable):
 		return m
 
 class PDIDissector(Elaboratable):
-	def __init__(self, tap : JTAGTAP):
+	def __init__(self, *, tap : JTAGTAP):
 		self._tap = tap
 		self.data = Signal(8)
 		self.sendHeader = Signal()
@@ -363,14 +363,14 @@ class PDIDissector(Elaboratable):
 		return m
 
 class JTAGPDISnifferSubtarget(Elaboratable):
-	def __init__(self, pads, in_fifo):
+	def __init__(self, *, pads, in_fifo):
 		self._pads = pads
 		self._in_fifo = in_fifo
 
 	def elaborate(self, platform) -> Module:
 		m = Module()
-		tap = m.submodules.tap = JTAGTAP(self._pads)
-		pdi = m.submodules.pdi = PDIDissector(tap)
+		tap = m.submodules.tap = JTAGTAP(pads = self._pads)
+		pdi = m.submodules.pdi = PDIDissector(tap = tap)
 		in_fifo = self._in_fifo
 
 		idCodeReadyNext = tap.idCodeReady
