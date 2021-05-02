@@ -137,12 +137,14 @@ class JTAGTAP(Elaboratable):
 					with m.If(resetIssue):
 						m.d.comb += tms.eq(1)
 						m.next = "SELECT-IR"
+					with m.Elif(
+						(idCodeIssue & (insn == TAPInstruction.idCode)) |
+						(pdiIssue & (insn == TAPInstruction.pdiCom))
+					):
+						m.next = "CAPTURE-DR"
 					with m.Elif(idCodeIssue | pdiIssue):
-						with m.If((insn == TAPInstruction.idCode) | (insn == TAPInstruction.pdiCom)):
-							m.next = "CAPTURE-DR"
-						with m.Else():
-							m.d.comb += tms.eq(1)
-							m.next = "SELECT-IR"
+						m.d.comb += tms.eq(1)
+						m.next = "SELECT-IR"
 					m.d.comb += cycleReady.eq(1)
 			with m.State("CAPTURE-DR"):
 				with m.If(mayUpdate):
@@ -181,7 +183,7 @@ class JTAGTAP(Elaboratable):
 						m.d.sync += idCode.eq(dataIn)
 						m.d.comb += idCodeReady.eq(1)
 					with m.Elif(pdiIssue):
-						m.d.sync += pdiDataIn.eq(dataIn)
+						m.d.sync += pdiDataIn.eq(dataIn[23:32])
 						m.d.comb += pdiReady.eq(1)
 					m.next = "IDLE"
 					m.d.comb += cycleReady.eq(1)
