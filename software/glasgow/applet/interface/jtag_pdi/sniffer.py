@@ -187,7 +187,9 @@ class PDIDissector(Elaboratable):
 		writeCount = Signal(32)
 		repCount = Signal(32)
 		updateCounts = Signal()
+		updateCountsNext = Signal()
 		updateRepeat = Signal()
+		newCommand = Signal()
 
 		m.submodules += [
 			FFSynchronizer(self._tap.pdiDataIn, pdiDataIn),
@@ -204,8 +206,10 @@ class PDIDissector(Elaboratable):
 			self.sendHeader.eq(0),
 			self.ready.eq(0),
 			self.error.eq(0),
+			updateCounts.eq(0),
 			updateRepeat.eq(0),
 		]
+		m.d.sync += updateCountsNext.eq(updateCounts)
 
 		with m.FSM(name = "pdiFSM"):
 			with m.State("RESET"):
@@ -230,9 +234,13 @@ class PDIDissector(Elaboratable):
 					m.d.sync += [
 						data.eq(pdiDataIn[0:8]),
 						opcode.eq(pdiDataIn[5:8]),
+						args.eq(pdiDataIn[0:4]),
+						newCommand.eq(1),
+					]
+					m.d.comb += [
+						self.sendHeader.eq(1),
 						updateCounts.eq(1),
 					]
-					m.d.comb += self.sendHeader.eq(1)
 				with m.Else():
 					m.d.sync += [
 						data.eq(pdiDataIn[0:8]),
@@ -249,10 +257,12 @@ class PDIDissector(Elaboratable):
 				]
 				m.next = "SEND-DATA"
 			with m.State("SEND-DATA"):
-				with m.If(updateCounts):
-					m.d.sync += updateCounts.eq(0)
-				with m.Elif((writeCount == 0) & (readCount == 0)):
-					m.d.sync += opcode.eq(PDIOpcodes.IDLE)
+				with m.If(~updateCountsNext & (writeCount == 0) & (readCount == 0)):
+					with m.If(repCount != 0):
+						m.d.sync += newCommand.eq(0)
+						m.d.comb += updateCounts.eq(1)
+					with m.Else():
+						m.d.sync += opcode.eq(PDIOpcodes.IDLE)
 				m.d.comb += self.ready.eq(1)
 				m.next = "IDLE"
 			with m.State("PARITY-ERROR"):
@@ -272,7 +282,6 @@ class PDIDissector(Elaboratable):
 		with m.FSM(name = "insnFSM"):
 			with m.State("IDLE"):
 				with m.If(updateCounts):
-					m.d.sync += args.eq(pdiDataIn[0:4])
 					m.next = "DECODE"
 			with m.State("DECODE"):
 				with m.Switch(opcode):
@@ -301,9 +310,10 @@ class PDIDissector(Elaboratable):
 			with m.State("LD"):
 				m.d.sync += [
 					writeCount.eq(0),
-					readCount.eq((repCount + 1) * sizeB),
-					repCount.eq(0),
+					readCount.eq(sizeB),
 				]
+				with m.If((repCount != 0) & ~newCommand):
+					m.d.sync += repCount.eq(repCount - 1)
 				m.next = "IDLE"
 			with m.State("STS"):
 				m.d.sync += [
@@ -313,10 +323,11 @@ class PDIDissector(Elaboratable):
 				m.next = "IDLE"
 			with m.State("ST"):
 				m.d.sync += [
-					writeCount.eq((repCount + 1) * sizeB),
+					writeCount.eq(sizeB),
 					readCount.eq(0),
-					repCount.eq(0),
 				]
+				with m.If((repCount != 0) & ~newCommand):
+					m.d.sync += repCount.eq(repCount - 1)
 				m.next = "IDLE"
 			with m.State("LDCS"):
 				m.d.sync += [
