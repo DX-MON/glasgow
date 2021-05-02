@@ -257,7 +257,6 @@ class PDIController(Elaboratable):
 		pdiIssue = self.issue
 		pdiComplete = self.complete
 		pdiNeedData = self.needData
-		pdiDataReady = self.dataReady
 		tapIssue = self._tap.pdiIssue
 		tapReady = self._tap.pdiReady
 		tapDataIn = self._tap.pdiDataIn
@@ -273,6 +272,7 @@ class PDIController(Elaboratable):
 		updateCounts = Signal()
 		updateRepeat = Signal()
 		newCommand = Signal()
+		dataReady = Signal()
 
 		m.d.comb += [
 			opcode.eq(self.cmd[5:8]),
@@ -281,6 +281,7 @@ class PDIController(Elaboratable):
 			updateCounts.eq(0),
 			updateRepeat.eq(0),
 		]
+		m.d.sync += dataReady.eq(self.dataReady)
 
 		with m.FSM(name = "pdi"):
 			with m.State("IDLE"):
@@ -304,7 +305,7 @@ class PDIController(Elaboratable):
 					with m.Else():
 						m.next = "RECV-DATA"
 			with m.State("SEND-DATA"):
-				with m.If(pdiDataReady):
+				with m.If(dataReady):
 					m.d.sync += [
 						pdiNeedData.eq(0),
 						tapDataOut.eq(Cat(self.dataOut, self.dataOut.xor())),
@@ -448,6 +449,8 @@ class JTAGPDIInteractiveSubtarget(Elaboratable):
 		pdiComplete = pdi.complete
 		pdiNeedData = pdi.needData
 		pdiDataReady = pdi.dataReady
+
+		m.d.comb += pdiDataReady.eq(0)
 
 		with m.FSM():
 			with m.State("IDLE"):
