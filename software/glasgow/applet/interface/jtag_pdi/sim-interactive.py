@@ -331,7 +331,7 @@ def jtagPDI(dataIn, dataOut):
 
 @jtagClock
 def benchJTAG():
-	global jtagResetPerform, idCodePerform, pdiPerform
+	global jtagResetPerform, idCodePerform, pdiPerform, pdiComplete
 
 	assert (yield tms) == 0
 	assert (yield tdi) == 1
@@ -347,9 +347,9 @@ def benchJTAG():
 	pdiPerform = True
 	yield from jtagInsn(TAPInstruction.pdiCom)
 	yield from jtagPDI((0xC0, 0), (0xEB, 1))
-	# yield
-	# yield from jtagPDI((0xFD, 1), (0xEB, 1))
-	# yield
+	yield from jtagPDI((0xFD, 1), (0xEB, 1))
+	pdiComplete = True
+	yield
 	# yield from jtagPDI((0x80, 1), (0xEB, 1))
 	# yield
 	# yield from jtagPDI((0x00, 0), (0x00, 0))
