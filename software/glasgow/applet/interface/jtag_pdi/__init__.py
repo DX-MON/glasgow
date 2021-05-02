@@ -10,6 +10,7 @@ from ... import *
 class TAPInstruction(IntEnum):
 	idCode = 0x3
 	pdiCom = 0x7
+	bypass = 0xf
 
 class PDIOpcodes(IntEnum):
 	(
@@ -22,6 +23,7 @@ class PDIOpcodes(IntEnum):
 class Header(IntEnum):
 	IDCode = 0x10
 	PDI = 0x11
+	Reset = 0x1E
 	Error = 0x1F
 
 class JTAGPDIInterface:
@@ -65,6 +67,11 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 			access.add_pin_argument(parser, pin, default = True)
 		access.add_pin_argument(parser, "srst", default = True)
 
+		parser.add_argument(
+			"-f", "--frequency", metavar = "FREQ", type = int, default = 4000,
+			help = "set TCK frequency to FREQ kHz (default: %(default)s)"
+		)
+
 	def build(self, target, args):
 		self.mux_interface = iface = target.multiplexer.claim_interface(self, args)
 		if args.raw_file or args.pdi_file:
@@ -72,6 +79,14 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 			subtarget = iface.add_subtarget(JTAGPDISnifferSubtarget(
 				pads = iface.get_pads(args, pins = self.__pins),
 				in_fifo = iface.get_in_fifo(depth = 8192),
+			))
+		else:
+			from .interactive import JTAGPDIInteractiveSubtarget
+			subtarget = iface.add_subtarget(JTAGPDIInteractiveSubtarget(
+				pads = iface.get_pads(args, pins = self.__pins),
+				in_fifo = iface.get_in_fifo(depth = 1024),
+				out_fifo = iface.get_out_fifo(depth = 1024),
+				period_cyc = target.sys_clk_freq // (args.frequency * 1000),
 			))
 
 	async def run(self, device, args):
@@ -87,6 +102,9 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 		g_output.add_argument(
 			"--pdi-vcd", metavar = "VCD-FILE", type = argparse.FileType("w"), dest = "pdi_file",
 			help = "write VCD waveforms to VCD-FILE")
+		g_output.add_argument(
+			"--interactive", default = False, action = "store_true",
+			help = "run an interactive PDI prompt")
 
 	async def _write_raw_vcd(self, file, iface : JTAGPDIInterface):
 		vcd_writer = VCDWriter(file, timescale = "1 ns", check_values = False)
