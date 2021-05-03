@@ -326,11 +326,17 @@ class PDIController(Elaboratable):
 					with m.If(writeCount != 0):
 						m.d.sync += pdiNeedData.eq(1)
 						m.next = "SEND-DATA"
+					with m.Elif((repCount != 0) & (opcode != PDIOpcodes.REPEAT)):
+						m.d.comb += updateCounts.eq(1)
+						m.next = "SEND-PAUSE"
 					with m.Elif(readCount != 0):
 						m.next = "RECV-DATA"
 					with m.Else():
 						m.d.comb += pdiComplete.eq(1)
 						m.next = "IDLE"
+			with m.State("SEND-PAUSE"):
+				with m.If(readCount != 0):
+					m.state = "SEND-DATA"
 
 			with m.State("RECV-DATA"):
 				m.d.sync += [
@@ -346,11 +352,17 @@ class PDIController(Elaboratable):
 			with m.State("HANDLE-RECV"):
 				with m.If(readCount != 0):
 					m.next = "RECV-DATA"
+				with m.Elif(repCount != 0):
+					m.d.comb += updateCounts.eq(1)
+					m.next = "RECV-PAUSE"
 				with m.Else():
 					m.d.comb += pdiComplete.eq(1)
 					m.next = "IDLE"
 				m.d.sync += self.dataIn.eq(tapDataIn[0:8])
 				m.d.comb += pdiHaveData.eq(1)
+			with m.State("RECV-PAUSE"):
+				with m.If(readCount != 0):
+					m.state = "RECV-DATA"
 
 		with m.FSM(name = "insn"):
 			with m.State("IDLE"):
