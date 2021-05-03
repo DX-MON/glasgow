@@ -317,6 +317,8 @@ class PDIController(Elaboratable):
 						tapIssue.eq(1),
 						writeCount.eq(writeCount - 1),
 					]
+					with m.If(opcode == PDIOpcodes.REPEAT):
+						m.d.comb += updateRepeat.eq(1)
 					m.next = "WAIT-SEND"
 			with m.State("WAIT-SEND"):
 				with m.If(tapReady):
@@ -427,7 +429,7 @@ class PDIController(Elaboratable):
 
 			with m.State("CAPTURE-REPEAT"):
 				with m.If(updateRepeat):
-					m.d.sync += repeatData.eq(Cat(tapDataIn[0:8], repeatData[0:24]))
+					m.d.sync += repeatData.eq(Cat(self.dataOut, repeatData[0:24]))
 					with m.If(writeCount == 1):
 						m.next = "UPDATE-REPEAT"
 			with m.State("UPDATE-REPEAT"):
