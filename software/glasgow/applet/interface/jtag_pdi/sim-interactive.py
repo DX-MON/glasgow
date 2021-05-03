@@ -143,6 +143,18 @@ def benchSync():
 	while not pdiComplete:
 		yield
 
+	while not pdiPerform:
+		yield
+	yield from writeData(Header.PDI)
+	yield from writeData(0x24)
+	yield dataOutFIFO.w_en.eq(0)
+	pdiPerform = False
+	while not pdiComplete:
+		yield
+	assert (yield from readData()) == 0x1E
+	assert (yield from readData()) == 0x98
+	assert (yield from readData()) == 0x42
+
 def jtagClock(process):
 	def clockTicker():
 		coroutine = process()
@@ -387,15 +399,13 @@ def benchJTAG():
 	yield from jtagPDI((0x00, 0), (0xEB, 1))
 	pdiComplete = True
 	yield
-	# yield
-	# yield from jtagPDI((0x24, 0), (0xEB, 1))
-	# yield
-	# yield from jtagPDI((0x00, 9), (0x1E, 0))
-	# yield
-	# yield from jtagPDI((0x00, 0), (0x98, 1))
-	# yield
-	# yield from jtagPDI((0x00, 0), (0x42, 0))
-	# yield
+	pdiPerform = True
+	yield from jtagPDI((0x24, 0), (0xEB, 1))
+	yield from jtagPDI((0x00, 9), (0x1E, 0))
+	yield from jtagPDI((0x00, 0), (0x98, 1))
+	yield from jtagPDI((0x00, 0), (0x42, 0))
+	pdiComplete = True
+	yield
 	# yield
 	# yield from jtagPDI((0x4C, 1), (0xEB, 1))
 	# yield
