@@ -122,6 +122,16 @@ def benchSync():
 	while not pdiComplete:
 		yield
 
+	while not pdiPerform:
+		yield
+	yield from writeData(Header.PDI)
+	yield from writeData(0x80)
+	yield dataOutFIFO.w_en.eq(0)
+	pdiPerform = False
+	while not pdiComplete:
+		yield
+	assert (yield from readData()) == 0x00
+
 def jtagClock(process):
 	def clockTicker():
 		coroutine = process()
@@ -287,9 +297,11 @@ def writeIDCode():
 	assert (yield tms) == 1
 	assert (yield tdi) == 0
 	yield
+	# EXIT1-DR => UPDATE-DR
 	assert (yield tms) == 1
 	assert (yield tdi) == 1
 	yield
+	# UPDATE-DR => IDLE
 	assert (yield tms) == 0
 	yield tdo.eq(1)
 	idCodeComplete = True
@@ -298,8 +310,13 @@ def writeIDCode():
 def jtagPDI(dataIn, dataOut):
 	byteIn = dataIn[0]
 	byteOut = dataOut[0]
+	# IDLE
+	while (yield tms) == 0:
+		yield
+	# IDLE | UPDATE-[DR|IR] => SELECT-DR
 	assert (yield tms) == 1
 	yield
+	# SELECT-DR => CAPTURE-DR
 	assert (yield tms) == 0
 	yield
 	for bit in range(8):
@@ -315,11 +332,14 @@ def jtagPDI(dataIn, dataOut):
 	assert (yield tms) == 0
 	assert (yield tdi) == dataIn[1]
 	yield
+	# SHIFT-DR => EXIT1-DR
 	assert (yield tms) == 1
 	yield
+	# EXIT1-DR => UPDATE-DR
 	assert (yield tms) == 1
 	assert (yield tdi) == 1
 	yield
+	# UPDATE-DR => IDLE
 	assert (yield tms) == 0
 	yield tdo.eq(1)
 	yield
@@ -345,17 +365,11 @@ def benchJTAG():
 	yield from jtagPDI((0xFD, 1), (0xEB, 1))
 	pdiComplete = True
 	yield
-	# yield from jtagPDI((0x80, 1), (0xEB, 1))
-	# yield
-	# yield from jtagPDI((0x00, 0), (0x00, 0))
-	# yield
-	# yield
-	# yield from jtagPDI((0xA1, 1), (0xEB, 1))
-	# yield
-	# yield from jtagPDI((0x02, 1), (0xEB, 1))
-	# yield
-	# yield from jtagPDI((0x00, 0), (0xEB, 1))
-	# yield
+	pdiPerform = True
+	yield from jtagPDI((0x80, 1), (0xEB, 1))
+	yield from jtagPDI((0x00, 0), (0x00, 0))
+	pdiComplete = True
+	yield
 	# yield
 	# yield from jtagPDI((0x24, 0), (0xEB, 1))
 	# yield
