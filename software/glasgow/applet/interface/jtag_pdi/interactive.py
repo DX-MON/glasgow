@@ -487,29 +487,33 @@ class JTAGPDIInteractiveSubtarget(Elaboratable):
 					m.d.sync += idCodeIssue.eq(0)
 					m.next = "SEND-IDCODE-3"
 			with m.State("SEND-IDCODE-3"):
-				m.d.comb += [
-					in_fifo.w_data.eq(tap.idCode[24:32]),
-					in_fifo.w_en.eq(1),
-				]
-				m.next = "SEND-IDCODE-2"
+				with m.If(in_fifo.w_rdy):
+					m.d.comb += [
+						in_fifo.w_data.eq(tap.idCode[24:32]),
+						in_fifo.w_en.eq(1),
+					]
+					m.next = "SEND-IDCODE-2"
 			with m.State("SEND-IDCODE-2"):
-				m.d.comb += [
-					in_fifo.w_data.eq(tap.idCode[16:24]),
-					in_fifo.w_en.eq(1),
-				]
-				m.next = "SEND-IDCODE-1"
+				with m.If(in_fifo.w_rdy):
+					m.d.comb += [
+						in_fifo.w_data.eq(tap.idCode[16:24]),
+						in_fifo.w_en.eq(1),
+					]
+					m.next = "SEND-IDCODE-1"
 			with m.State("SEND-IDCODE-1"):
-				m.d.comb += [
-					in_fifo.w_data.eq(tap.idCode[8:16]),
-					in_fifo.w_en.eq(1),
-				]
-				m.next = "SEND-IDCODE-0"
+				with m.If(in_fifo.w_rdy):
+					m.d.comb += [
+						in_fifo.w_data.eq(tap.idCode[8:16]),
+						in_fifo.w_en.eq(1),
+					]
+					m.next = "SEND-IDCODE-0"
 			with m.State("SEND-IDCODE-0"):
-				m.d.comb += [
-					in_fifo.w_data.eq(tap.idCode[0:8]),
-					in_fifo.w_en.eq(1),
-				]
-				m.next = "IDLE"
+				with m.If(in_fifo.w_rdy):
+					m.d.comb += [
+						in_fifo.w_data.eq(tap.idCode[0:8]),
+						in_fifo.w_en.eq(1),
+					]
+					m.next = "IDLE"
 
 			with m.State("READ-PDI-CMD"):
 				with m.If(out_fifo.r_rdy):
