@@ -155,6 +155,20 @@ def benchSync():
 	assert (yield from readData()) == 0x98
 	assert (yield from readData()) == 0x42
 
+	while not pdiPerform:
+		yield
+	yield from writeData(Header.PDI)
+	yield from writeData(0x4C)
+	yield from writeData(0xCA)
+	yield from writeData(0x01)
+	yield from writeData(0x00)
+	yield from writeData(0x01)
+	yield from writeData(0x00)
+	yield dataOutFIFO.w_en.eq(0)
+	pdiPerform = False
+	while not pdiComplete:
+		yield
+
 def jtagClock(process):
 	def clockTicker():
 		coroutine = process()
@@ -406,22 +420,18 @@ def benchJTAG():
 	yield from jtagPDI((0x00, 0), (0x42, 0))
 	pdiComplete = True
 	yield
-	# yield
-	# yield from jtagPDI((0x4C, 1), (0xEB, 1))
-	# yield
-	# yield from jtagPDI((0xCA, 0), (0xEB, 1))
-	# yield
-	# yield from jtagPDI((0x01, 1), (0xEB, 1))
-	# yield
-	# yield from jtagPDI((0x00, 0), (0xEB, 1))
-	# yield
-	# yield from jtagPDI((0x01, 1), (0xEB, 1))
-	# yield
-	# yield from jtagPDI((0x00, 0), (0xEB, 1))
-	# yield
-	# yield
-	# yield
-	# yield
+	pdiPerform = True
+	yield from jtagPDI((0x4C, 1), (0xEB, 1))
+	yield from jtagPDI((0xCA, 0), (0xEB, 1))
+	yield from jtagPDI((0x01, 1), (0xEB, 1))
+	yield from jtagPDI((0x00, 0), (0xEB, 1))
+	yield from jtagPDI((0x01, 1), (0xEB, 1))
+	yield from jtagPDI((0x00, 0), (0xEB, 1))
+	pdiComplete = True
+	yield
+	yield
+	yield
+	yield
 
 sim = Simulator(subtarget)
 # Define the system clock to have a period of 1/48MHz
