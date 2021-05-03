@@ -401,7 +401,7 @@ def benchJTAG():
 	yield
 	pdiPerform = True
 	yield from jtagPDI((0x24, 0), (0xEB, 1))
-	yield from jtagPDI((0x00, 9), (0x1E, 0))
+	yield from jtagPDI((0x00, 0), (0x1E, 0))
 	yield from jtagPDI((0x00, 0), (0x98, 1))
 	yield from jtagPDI((0x00, 0), (0x42, 0))
 	pdiComplete = True
