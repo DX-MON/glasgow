@@ -78,6 +78,11 @@ def readData():
 	yield
 	return data
 
+def writeData(data):
+	yield dataOutFIFO.w_data.eq(data)
+	yield dataOutFIFO.w_en.eq(1)
+	yield
+
 def benchSync():
 	global jtagResetPerform, idCodePerform, pdiPerform
 
@@ -97,12 +102,9 @@ def benchSync():
 	# Request the hardware to read out the target IDCode
 	while not idCodePerform:
 		yield
-	yield dataOutFIFO.w_data.eq(Header.IDCode)
-	yield dataOutFIFO.w_en.eq(1)
-	yield
-	idCodePerform = False
+	yield from writeData(Header.IDCode)
 	yield dataOutFIFO.w_en.eq(0)
-	yield
+	idCodePerform = False
 	while not idCodeComplete:
 		yield
 	assert (yield from readData()) == 0x69
@@ -112,18 +114,11 @@ def benchSync():
 
 	while not pdiPerform:
 		yield
-	yield dataOutFIFO.w_data.eq(Header.PDI)
-	yield dataOutFIFO.w_en.eq(1)
-	yield
-	yield dataOutFIFO.w_data.eq(0xC0)
-	yield dataOutFIFO.w_en.eq(1)
-	yield
-	yield dataOutFIFO.w_data.eq(0xFD)
-	yield dataOutFIFO.w_en.eq(1)
-	yield
-	pdiPerform = False
+	yield from writeData(Header.PDI)
+	yield from writeData(0xC0)
+	yield from writeData(0xFD)
 	yield dataOutFIFO.w_en.eq(0)
-	yield
+	pdiPerform = False
 	while not pdiComplete:
 		yield
 
