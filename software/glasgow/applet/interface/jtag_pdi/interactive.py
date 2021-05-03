@@ -246,6 +246,7 @@ class PDIController(Elaboratable):
 		self.complete = Signal()
 		self.needData = Signal()
 		self.dataReady = Signal()
+		self.haveData = Signal()
 
 		self.cmd = Signal(8)
 		self.dataIn = Signal(8)
@@ -257,6 +258,7 @@ class PDIController(Elaboratable):
 		pdiIssue = self.issue
 		pdiComplete = self.complete
 		pdiNeedData = self.needData
+		pdiHaveData = self.haveData
 		tapIssue = self._tap.pdiIssue
 		tapReady = self._tap.pdiReady
 		tapDataIn = self._tap.pdiDataIn
@@ -280,6 +282,7 @@ class PDIController(Elaboratable):
 			sizeB.eq(self.cmd[0:2] + 1),
 			updateCounts.eq(0),
 			updateRepeat.eq(0),
+			pdiHaveData.eq(0),
 		]
 		m.d.sync += dataReady.eq(self.dataReady)
 
@@ -302,20 +305,20 @@ class PDIController(Elaboratable):
 					with m.If(writeCount != 0):
 						m.d.sync += pdiNeedData.eq(1)
 						m.next = "SEND-DATA"
-					with m.Else():
+					with m.Elif(readCount != 0):
 						m.next = "RECV-DATA"
+
 			with m.State("SEND-DATA"):
+				with m.If(self.dataReady):
+					m.d.sync += pdiNeedData.eq(0)
 				with m.If(dataReady):
 					m.d.sync += [
-						pdiNeedData.eq(0),
 						tapDataOut.eq(Cat(self.dataOut, self.dataOut.xor())),
 						tapIssue.eq(1),
 						writeCount.eq(writeCount - 1),
 					]
-					m.next = "WAIT-DATA"
-			with m.State("RECV-DATA"):
-				pass
-			with m.State("WAIT-DATA"):
+					m.next = "WAIT-SEND"
+			with m.State("WAIT-SEND"):
 				with m.If(tapReady):
 					m.d.sync += tapIssue.eq(0)
 					with m.If(writeCount != 0):
@@ -326,6 +329,26 @@ class PDIController(Elaboratable):
 					with m.Else():
 						m.d.comb += pdiComplete.eq(1)
 						m.next = "IDLE"
+
+			with m.State("RECV-DATA"):
+				m.d.sync += [
+					tapDataOut.eq(0),
+					tapIssue.eq(1),
+					readCount.eq(readCount - 1),
+				]
+				m.next = "WAIT-RECV"
+			with m.State("WAIT-RECV"):
+				with m.If(tapReady):
+					m.d.sync += tapIssue.eq(0)
+					m.next = "HANDLE-RECV"
+			with m.State("HANDLE-RECV"):
+				with m.If(readCount != 0):
+					m.next = "RECV-DATA"
+				with m.Else():
+					m.d.comb += pdiComplete.eq(1)
+					m.next = "IDLE"
+				m.d.sync += self.dataIn.eq(tapDataIn[0:8])
+				m.d.comb += pdiHaveData.eq(1)
 
 		with m.FSM(name = "insn"):
 			with m.State("IDLE"):
@@ -449,6 +472,7 @@ class JTAGPDIInteractiveSubtarget(Elaboratable):
 		pdiComplete = pdi.complete
 		pdiNeedData = pdi.needData
 		pdiDataReady = pdi.dataReady
+		pdiHaveData = pdi.haveData
 
 		m.d.comb += pdiDataReady.eq(0)
 
@@ -533,8 +557,21 @@ class JTAGPDIInteractiveSubtarget(Elaboratable):
 						pdiIssue.eq(1),
 						pdiDataOut.eq(out_fifo.r_data),
 					]
+				with m.Elif(pdiHaveData):
+					m.next = "SEND-PDI-DATA"
 				with m.Elif(pdiComplete):
-					m.d.sync += pdiIssue.eq(0)
 					m.next = "IDLE"
 
+				with m.If(pdiComplete):
+					m.d.sync += pdiIssue.eq(0)
+			with m.State("SEND-PDI-DATA"):
+				with m.If(in_fifo.w_rdy):
+					m.d.comb += [
+						in_fifo.w_en.eq(1),
+						in_fifo.w_data.eq(pdiDataIn),
+					]
+					with m.If(~pdiIssue):
+						m.next = "IDLE"
+					with m.Else():
+						m.next = "HANDLE-PDI"
 		return m
