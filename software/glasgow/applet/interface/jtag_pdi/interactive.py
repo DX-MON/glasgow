@@ -335,8 +335,8 @@ class PDIController(Elaboratable):
 						m.d.comb += pdiComplete.eq(1)
 						m.next = "IDLE"
 			with m.State("SEND-PAUSE"):
-				with m.If(readCount != 0):
-					m.state = "SEND-DATA"
+				with m.If(writeCount != 0):
+					m.next = "SEND-DATA"
 
 			with m.State("RECV-DATA"):
 				m.d.sync += [
@@ -362,7 +362,7 @@ class PDIController(Elaboratable):
 				m.d.comb += pdiHaveData.eq(1)
 			with m.State("RECV-PAUSE"):
 				with m.If(readCount != 0):
-					m.state = "RECV-DATA"
+					m.next = "RECV-DATA"
 
 		with m.FSM(name = "insn"):
 			with m.State("IDLE"):
