@@ -72,6 +72,17 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 			help = "set TCK frequency to FREQ kHz (default: %(default)s)"
 		)
 
+		g_output = parser.add_mutually_exclusive_group()
+		g_output.add_argument(
+			"--raw-vcd", metavar = "VCD-FILE", type = argparse.FileType("w"), dest = "raw_file",
+			help = "write VCD waveforms to VCD-FILE")
+		g_output.add_argument(
+			"--pdi-vcd", metavar = "VCD-FILE", type = argparse.FileType("w"), dest = "pdi_file",
+			help = "write VCD waveforms to VCD-FILE")
+		g_output.add_argument(
+			"--interactive", default = False, action = "store_true",
+			help = "run an interactive PDI prompt")
+
 	def build(self, target, args):
 		self.mux_interface = iface = target.multiplexer.claim_interface(self, args)
 		if args.raw_file or args.pdi_file:
@@ -92,19 +103,6 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 	async def run(self, device, args):
 		iface = await device.demultiplexer.claim_interface(self, self.mux_interface, args)
 		return JTAGPDIInterface(iface)
-
-	@classmethod
-	def add_interact_arguments(cls, parser : argparse.ArgumentParser):
-		g_output = parser.add_mutually_exclusive_group()
-		g_output.add_argument(
-			"--raw-vcd", metavar = "VCD-FILE", type = argparse.FileType("w"), dest = "raw_file",
-			help = "write VCD waveforms to VCD-FILE")
-		g_output.add_argument(
-			"--pdi-vcd", metavar = "VCD-FILE", type = argparse.FileType("w"), dest = "pdi_file",
-			help = "write VCD waveforms to VCD-FILE")
-		g_output.add_argument(
-			"--interactive", default = False, action = "store_true",
-			help = "run an interactive PDI prompt")
 
 	async def _write_raw_vcd(self, file, iface : JTAGPDIInterface):
 		vcd_writer = VCDWriter(file, timescale = "1 ns", check_values = False)
