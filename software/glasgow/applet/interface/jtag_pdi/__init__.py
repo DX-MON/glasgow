@@ -236,11 +236,33 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 		finally:
 			vcd_writer.close(cycle)
 
+	async def _interactive_prompt(self, iface):
+		from sys import stdin
+		from . import meta
+
+		await iface.write([Header.Reset])
+		if meta.to_int8(await iface.read(length = 1)) != 1:
+			logging.error("Failed to reset target, aborting")
+			return
+		logging.info("Device reset complete")
+
+		await iface.write([Header.IDCode])
+		idCode = meta.decode_device_id_code(await iface.read(length = 4))
+		logging.info(f"Device is a {idCode[1]} {idCode[3]} revision {idCode[2]} ({idCode[0]})")
+		logging.info("Begining PDI session with device, type 'exit' to leave")
+
+		response = None
+		while response != 'exit':
+			print("> ", flush=True, end='')
+			response = stdin.readline().strip()
+
 	async def interact(self, device, args, iface):
 		if args.raw_file:
 			await self._write_raw_vcd(args.raw_file, iface)
 		elif args.pdi_file:
 			await self._write_pdi_vcd(args.pdi_file, iface)
+		else:
+			await self._interactive_prompt(iface.lower)
 
 # -------------------------------------------------------------------------------------------------
 
