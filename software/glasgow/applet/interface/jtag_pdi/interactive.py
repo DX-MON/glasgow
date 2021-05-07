@@ -175,6 +175,7 @@ class JTAGTAP(Elaboratable):
 			with m.State("EXIT-DR"):
 				with m.If(mayUpdate):
 					m.d.comb += tms.eq(1)
+					m.d.sync += dataIn.eq(Cat(dataIn[1:32], tdi)),
 					m.next = "UPDATE-DR"
 					m.d.comb += cycleReady.eq(1)
 			with m.State("UPDATE-DR"):

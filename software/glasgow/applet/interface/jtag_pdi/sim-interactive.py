@@ -260,6 +260,7 @@ def writeIDCode():
 	yield
 	assert (yield tms) == 0
 	assert (yield tdi) == 0
+	yield
 	yield tdo.eq(1)
 	yield
 	yield tdo.eq(1)
@@ -325,10 +326,9 @@ def writeIDCode():
 	yield
 	yield tdo.eq(1)
 	yield
-	yield tdo.eq(0)
-	yield
 	assert (yield tms) == 0
 	assert (yield tdi) == 0
+	yield tdo.eq(0)
 	yield
 	# SHIFT-DR => EXIT1-DR
 	assert (yield tms) == 1
@@ -358,16 +358,16 @@ def jtagPDI(dataIn, dataOut):
 	yield
 	for bit in range(8):
 		assert (yield tms) == 0
-		yield tdo.eq(byteOut & 1)
-		byteOut >>= 1
 		yield
 		assert (yield tdi) == (byteIn & 1)
 		byteIn >>= 1
+		yield tdo.eq(byteOut & 1)
+		byteOut >>= 1
 	assert (yield tms) == 0
-	yield tdo.eq(dataOut[1])
 	yield
 	assert (yield tms) == 0
 	assert (yield tdi) == dataIn[1]
+	yield tdo.eq(dataOut[1])
 	yield
 	# SHIFT-DR => EXIT1-DR
 	assert (yield tms) == 1
