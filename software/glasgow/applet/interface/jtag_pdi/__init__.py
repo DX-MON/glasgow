@@ -264,6 +264,22 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 			args = ((sizeA - 1) << 2) | (sizeB - 1)
 		return (opcode << 5) | args
 
+	@staticmethod
+	def _parse_hex(value : str):
+		if not value.startswith('0x') or any(
+			not ((c >= '0' and c <= '9') or (c >= 'a' and c <= 'f'))
+				for c in value[2:].lower()):
+			return 'Invalid hexadecimal value'
+		return int(value, 16)
+
+	@staticmethod
+	def _check_data(data, parts : list):
+		for i, value in enumerate(data):
+			if not isinstance(value, int):
+				return f'{value} for data byte {i + 1}'
+			elif JTAGPDIApplet._least_bytes_for(value) != 1:
+				return f'Value {parts[2 + i]} ({value:#x}) is not a single byte'
+		return None
 
 	def _parse_command(self, line : str):
 		parts = line.split()
@@ -281,9 +297,21 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 		elif command == 'ldcs':
 			if len(parts) != 2:
 				return 'Incorrect number of arguments to LDCS instruction'
+			reg = self._encode_csreg(parts[1])
+			if not isinstance(reg, int):
+				return reg
+			return ([self._encode_opcode(PDIOpcodes.LDCS, address = reg)], 1)
 		elif command == 'stcs':
 			if len(parts) != 3:
 				return 'Incorrect number of arguments to STCS instruction'
+			reg = self._encode_csreg(parts[1])
+			if not isinstance(reg, int):
+				return reg
+			value = self._parse_hex(parts[2])
+			check = self._check_data((value,), parts)
+			if check is not None:
+				return check
+			return ([self._encode_opcode(PDIOpcodes.STCS, address = reg), value], 0)
 		elif command == 'repeat':
 			pass
 		elif command == 'key':
