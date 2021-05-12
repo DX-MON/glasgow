@@ -333,6 +333,23 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 		elif command.startswith('sts.'):
 			if len(parts) < 2:
 				return 'Incorrect number of arguments to STS instruction'
+			sizeB = self._suffix_to_bytes(command.split('.', 1)[1])
+			if not isinstance(sizeB, int):
+				return sizeB
+			if len(parts) > 2 + sizeB:
+				return 'Incorrect number of arguments to STS instruction'
+			address = self._parse_hex(parts[1])
+			if not isinstance(address, int):
+				return address
+			sizeA = self._least_bytes_for(address)
+			if not isinstance(sizeA, int):
+				return sizeA
+			data = [self._parse_hex(part) for part in parts[2:]]
+			check = self._check_data(data, parts)
+			if check is not None:
+				return check
+			return ([self._encode_opcode(PDIOpcodes.STS, sizeA = sizeA, sizeB = sizeB)] +
+				self._to_bytes(sizeA, address) + data, 0)
 		elif command == 'ld':
 			pass
 		elif command == 'st':
