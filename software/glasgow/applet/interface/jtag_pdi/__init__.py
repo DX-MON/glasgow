@@ -273,6 +273,38 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 		return int(value, 16)
 
 	@staticmethod
+	def _least_bytes_for(value : int):
+		if value == (value & 0xFF):
+			return 1
+		elif value == (value & 0xFFFF):
+			return 2
+		elif value == (value & 0xFFFFFF):
+			return 3
+		elif value == (value & 0xFFFFFFFF):
+			return 4
+		return 'Invalid value, or value too long'
+
+	@staticmethod
+	def _suffix_to_bytes(suffix : str):
+		if suffix == 'u8':
+			return 1
+		elif suffix == 'u16':
+			return 2
+		elif suffix == 'u24':
+			return 3
+		elif suffix == 'u32':
+			return 4
+		return 'Invalid instruction suffix'
+
+	@staticmethod
+	def _to_bytes(length : int, value : int):
+		result = []
+		for i in range(length):
+			result.append(value & 0xFF)
+			value >>= 8
+		return result
+
+	@staticmethod
 	def _check_data(data, parts : list):
 		for i, value in enumerate(data):
 			if not isinstance(value, int):
@@ -287,6 +319,17 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 		if command.startswith('lds.'):
 			if len(parts) != 2:
 				return 'Incorrect number of arguments to LDS instruction'
+			sizeB = self._suffix_to_bytes(command.split('.', 1)[1])
+			if not isinstance(sizeB, int):
+				return sizeB
+			address = self._parse_hex(parts[1])
+			if not isinstance(address, int):
+				return address
+			sizeA = self._least_bytes_for(address)
+			if not isinstance(sizeA, int):
+				return sizeA
+			return ([self._encode_opcode(PDIOpcodes.LDS, sizeA = sizeA, sizeB = sizeB)] + \
+				self._to_bytes(sizeA, address), sizeB)
 		elif command.startswith('sts.'):
 			if len(parts) < 2:
 				return 'Incorrect number of arguments to STS instruction'
