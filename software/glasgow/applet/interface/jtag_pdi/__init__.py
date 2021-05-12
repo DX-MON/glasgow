@@ -45,6 +45,7 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 	"""
 
 	__pins = ("tck", "tms", "tdi", "tdo", "srst")
+	__key_bytes = [0xff, 0x88, 0xd8, 0xcd, 0x45, 0xab, 0x89, 0x12]
 
 	def __init__(self, *args, **kwargs):
 		super().__init__(*args, **kwargs)
@@ -236,6 +237,59 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 		finally:
 			vcd_writer.close(cycle)
 
+	@staticmethod
+	def _encode_csreg(register : str):
+		if register == 'status':
+			return 0
+		elif register == 'reset':
+			return 1
+		elif register == 'ctrl':
+			return 2
+		elif register.isdecimal():
+			return int(register)
+		return 'Invalid Control/Status register value given'
+
+	@staticmethod
+	def _encode_opcode(opcode, sizeA = None, sizeB = None, address = None):
+		args = 0
+		if address:
+			if address > 15:
+				return 'Invalid Control/Status register address'
+			args = address
+		elif sizeA is not None and sizeB is not None:
+			if sizeA == 0 or sizeB == 0:
+				return 'Size value cannot be 0'
+			elif sizeA > 4 or sizeB > 4:
+				return 'Size value too large, cannot be more than 4'
+			args = ((sizeA - 1) << 2) | (sizeB - 1)
+		return (opcode << 5) | args
+
+
+	def _parse_command(self, line : str):
+		parts = line.split()
+		command = parts[0].lower()
+		if command.startswith('lds.'):
+			if len(parts) != 2:
+				return 'Incorrect number of arguments to LDS instruction'
+		elif command.startswith('sts.'):
+			if len(parts) < 2:
+				return 'Incorrect number of arguments to STS instruction'
+		elif command == 'ld':
+			pass
+		elif command == 'st':
+			pass
+		elif command == 'ldcs':
+			if len(parts) != 2:
+				return 'Incorrect number of arguments to LDCS instruction'
+		elif command == 'stcs':
+			if len(parts) != 3:
+				return 'Incorrect number of arguments to STCS instruction'
+		elif command == 'repeat':
+			pass
+		elif command == 'key':
+			return ([self._encode_opcode(PDIOpcodes.KEY)] + self.__key_bytes, 0)
+		return 'Invalid opcode'
+
 	async def _interactive_prompt(self, iface):
 		from sys import stdin
 		from . import meta
@@ -255,6 +309,12 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 		while response != 'exit':
 			print("> ", flush=True, end='')
 			response = stdin.readline().strip()
+			if response == 'exit':
+				break
+			command = self._parse_command(response)
+			if isinstance(command, str):
+				logging.error(command)
+				continue
 
 	async def interact(self, device, args, iface):
 		if args.raw_file:
