@@ -403,6 +403,9 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 			if isinstance(command, str):
 				logging.error(command)
 				continue
+			operation, readCount = command
+			await iface.write([Header.PDI] + operation)
+			result = bytes(await iface.read(length = readCount))
 
 	async def interact(self, device, args, iface):
 		if args.raw_file:
