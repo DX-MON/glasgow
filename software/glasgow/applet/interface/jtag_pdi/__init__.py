@@ -384,14 +384,14 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 
 		await iface.write([Header.Reset])
 		if meta.to_int8(await iface.read(length = 1)) != 1:
-			logging.error("Failed to reset target, aborting")
+			self.logger.error("Failed to reset target, aborting")
 			return
-		logging.info("Device reset complete")
+		self.logger.info("Device reset complete")
 
 		await iface.write([Header.IDCode])
 		idCode = meta.decode_device_id_code(await iface.read(length = 4))
-		logging.info(f"Device is a {idCode[1]} {idCode[3]} revision {idCode[2]} ({idCode[0]})")
-		logging.info("Begining PDI session with device, type 'exit' to leave")
+		self.logger.info(f"Device is a {idCode[1]} {idCode[3]} revision {idCode[2]} ({idCode[0]})")
+		self.logger.info("Begining PDI session with device, type 'exit' to leave")
 
 		response = None
 		while response != 'exit':
@@ -401,11 +401,12 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 				break
 			command = self._parse_command(response)
 			if isinstance(command, str):
-				logging.error(command)
+				self.logger.error(command)
 				continue
 			operation, readCount = command
 			await iface.write([Header.PDI] + operation)
 			result = bytes(await iface.read(length = readCount))
+			self.logger.info(f'Recieved {result}')
 
 	async def interact(self, device, args, iface):
 		if args.raw_file:
