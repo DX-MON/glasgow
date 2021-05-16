@@ -397,6 +397,8 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 		while response != 'exit':
 			print("> ", flush=True, end='')
 			response = stdin.readline().strip()
+			if response == '':
+				continue
 			if response == 'exit':
 				break
 			command = self._parse_command(response)
@@ -405,6 +407,8 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 				continue
 			operation, readCount = command
 			await iface.write([Header.PDI] + operation)
+			if readCount != 0:
+				result = bytes(await iface.read())
 			result = bytes(await iface.read(length = readCount))
 			self.logger.info(f'Recieved {result}')
 
