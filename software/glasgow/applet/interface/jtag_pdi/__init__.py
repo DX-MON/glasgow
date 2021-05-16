@@ -265,12 +265,15 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 		return (opcode << 5) | args
 
 	@staticmethod
-	def _parse_hex(value : str):
-		if not value.startswith('0x') or any(
-			not ((c >= '0' and c <= '9') or (c >= 'a' and c <= 'f'))
-				for c in value[2:].lower()):
-			return 'Invalid hexadecimal value'
-		return int(value, 16)
+	def _parse_number(value : str):
+		if value.startswith('0x'):
+			if any(not ((c >= '0' and c <= '9') or (c >= 'a' and c <= 'f'))
+					for c in value[2:].lower()):
+				return 'Invalid hexadecimal value'
+			return int(value, 16)
+		elif value.isnumeric():
+			return int(value)
+		return 'Invalid number'
 
 	@staticmethod
 	def _least_bytes_for(value : int):
@@ -322,7 +325,7 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 			sizeB = self._suffix_to_bytes(command.split('.', 1)[1])
 			if not isinstance(sizeB, int):
 				return sizeB
-			address = self._parse_hex(parts[1])
+			address = self._parse_number(parts[1])
 			if not isinstance(address, int):
 				return address
 			sizeA = self._least_bytes_for(address)
@@ -338,13 +341,13 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 				return sizeB
 			if len(parts) > 2 + sizeB:
 				return 'Incorrect number of arguments to STS instruction'
-			address = self._parse_hex(parts[1])
+			address = self._parse_number(parts[1])
 			if not isinstance(address, int):
 				return address
 			sizeA = self._least_bytes_for(address)
 			if not isinstance(sizeA, int):
 				return sizeA
-			data = [self._parse_hex(part) for part in parts[2:]]
+			data = [self._parse_number(part) for part in parts[2:]]
 			check = self._check_data(data, parts)
 			if check is not None:
 				return check
@@ -367,7 +370,7 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 			reg = self._encode_csreg(parts[1])
 			if not isinstance(reg, int):
 				return reg
-			value = self._parse_hex(parts[2])
+			value = self._parse_number(parts[2])
 			check = self._check_data((value,), parts)
 			if check is not None:
 				return check
