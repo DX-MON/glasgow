@@ -88,13 +88,13 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 		self.mux_interface = iface = target.multiplexer.claim_interface(self, args)
 		if args.raw_file or args.pdi_file:
 			from .sniffer import JTAGPDISnifferSubtarget
-			subtarget = iface.add_subtarget(JTAGPDISnifferSubtarget(
+			iface.add_subtarget(JTAGPDISnifferSubtarget(
 				pads = iface.get_pads(args, pins = self.__pins),
 				in_fifo = iface.get_in_fifo(depth = 8192),
 			))
 		else:
 			from .interactive import JTAGPDIInteractiveSubtarget
-			subtarget = iface.add_subtarget(JTAGPDIInteractiveSubtarget(
+			iface.add_subtarget(JTAGPDIInteractiveSubtarget(
 				pads = iface.get_pads(args, pins = self.__pins),
 				in_fifo = iface.get_in_fifo(depth = 1024),
 				out_fifo = iface.get_out_fifo(depth = 1024),
