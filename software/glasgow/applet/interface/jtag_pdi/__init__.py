@@ -376,7 +376,17 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 				return check
 			return ([self._encode_opcode(PDIOpcodes.STCS, address = reg), value], 0)
 		elif command == 'repeat':
-			pass
+			if len(parts) != 2:
+				return 'Incorrect number of arguments to REPEAT instruction'
+			repeats = self._parse_number(parts[1])
+			if not isinstance(repeats, int):
+				return repeats
+			sizeB = self._least_bytes_for(repeats)
+			if not isinstance(sizeB, int):
+				return sizeB
+			self.__repeatCount = repeats
+			return ([self._encode_opcode(PDIOpcodes.REPEAT, sizeA = 1, sizeB = sizeB)] +
+				self._to_bytes(sizeB, repeats), 0)
 		elif command == 'key':
 			return ([self._encode_opcode(PDIOpcodes.KEY)] + self.__key_bytes, 0)
 		return 'Invalid opcode'
