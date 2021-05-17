@@ -388,7 +388,38 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 				return access
 			return ([self._encode_opcode(PDIOpcodes.LD, sizeA = access, sizeB = sizeB)], sizeB)
 		elif command == 'st':
-			pass
+			if len(parts) < 2:
+				return 'Incorrect number of arguments to ST instruction'
+			repeats = self.__repeatCount + 1
+			self.__repeatCount = 0
+			if len(parts) > 2 + repeats:
+				return 'Incorrect number of arguments to ST instruction'
+			access = self._parse_ptr(parts[1])
+			if not isinstance(access, int):
+				return access
+			data = [self._parse_number(part) for part in parts[2:]]
+			check = self._check_data(data, parts)
+			if check is not None:
+				return check
+			return ([self._encode_opcode(PDIOpcodes.ST, sizeA = access, sizeB = 1)] + data, 0)
+		elif command.startswith('st.'):
+			if len(parts) != 3:
+				return 'Incorrect number of arguments to ST instruction'
+			elif self.__repeatCount != 0: # TODO: allow this at some point.. maybe
+				return 'Attempting to repeat complex ST instruction'
+			sizeB = self._suffix_to_bytes(command.split('.', 1)[1])
+			if not isinstance(sizeB, int):
+				return sizeB
+			if len(parts) > 2 + sizeB:
+				return 'Incorrect number of arguments to ST instruction'
+			access = self._parse_ptr(parts[1])
+			if not isinstance(access, int):
+				return access
+			data = [self._parse_number(part) for part in parts[2:]]
+			check = self._check_data(data, parts)
+			if check is not None:
+				return check
+			return ([self._encode_opcode(PDIOpcodes.ST, sizeA = access, sizeB = sizeB)] + data, 0)
 		elif command == 'ldcs':
 			if len(parts) != 2:
 				return 'Incorrect number of arguments to LDCS instruction'
