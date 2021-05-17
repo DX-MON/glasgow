@@ -276,6 +276,19 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 		return 'Invalid number'
 
 	@staticmethod
+	def _parse_ptr(value : str):
+		access = value.lower()
+		if access == '*ptr' or access == '*(ptr)':
+			return 1
+		elif access == '*ptr++' or access == '*(ptr++)':
+			return 2
+		elif access == 'ptr':
+			return 3
+		elif access == 'ptr++':
+			return 4 # Allow access to the spicy 'reserved' ptr access encoding
+		return 'Invalid pointer access'
+
+	@staticmethod
 	def _least_bytes_for(value : int):
 		if value == (value & 0xFF):
 			return 1
@@ -354,7 +367,26 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 			return ([self._encode_opcode(PDIOpcodes.STS, sizeA = sizeA, sizeB = sizeB)] +
 				self._to_bytes(sizeA, address) + data, 0)
 		elif command == 'ld':
-			pass
+			if len(parts) != 2:
+				return 'Incorrect number of arguments to LD instruction'
+			repeats = self.__repeatCount + 1
+			self.__repeatCount = 0
+			access = self._parse_ptr(parts[1])
+			if not isinstance(access, int):
+				return access
+			return ([self._encode_opcode(PDIOpcodes.LD, sizeA = access, sizeB = 1)], repeats)
+		elif command.startswith('ld.'):
+			if len(parts) != 2:
+				return 'Incorrect number of arguments to LD instruction'
+			elif self.__repeatCount != 0: # TODO: allow this at some point.. maybe
+				return 'Attempting to repeat complex LD instruction'
+			sizeB = self._suffix_to_bytes(command.split('.', 1)[1])
+			if not isinstance(sizeB, int):
+				return sizeB
+			access = self._parse_ptr(parts[1])
+			if not isinstance(access, int):
+				return access
+			return ([self._encode_opcode(PDIOpcodes.LD, sizeA = access, sizeB = sizeB)], sizeB)
 		elif command == 'st':
 			pass
 		elif command == 'ldcs':
