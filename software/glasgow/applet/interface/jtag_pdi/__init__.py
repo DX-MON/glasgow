@@ -45,7 +45,8 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 	"""
 
 	__pins = ("tck", "tms", "tdi", "tdo", "srst")
-	__key_bytes = [0xff, 0x88, 0xd8, 0xcd, 0x45, 0xab, 0x89, 0x12]
+	__nvm_key_bytes = [0xff, 0x88, 0xd8, 0xcd, 0x45, 0xab, 0x89, 0x12]
+	__debug_key_bytes = [0x21, 0x81, 0x7c, 0x9f, 0xd4, 0x2d, 0x21, 0x3a]
 
 	def __init__(self, *args, **kwargs):
 		super().__init__(*args, **kwargs)
@@ -451,7 +452,16 @@ class JTAGPDIApplet(GlasgowApplet, name="jtag-pdi"):
 			return ([self._encode_opcode(PDIOpcodes.REPEAT, sizeA = 1, sizeB = sizeB)] +
 				self._to_bytes(sizeB, repeats), 0)
 		elif command == 'key':
-			return ([self._encode_opcode(PDIOpcodes.KEY)] + self.__key_bytes, 0)
+			if len(parts) != 2:
+				return 'Incorrect number of arguments to KEY instruction'
+			which = parts[1].lower()
+			if which == 'nvm':
+				key = self.__nvm_key_bytes
+			elif which == 'debug':
+				key = self.__debug_key_bytes
+			else:
+				return 'Invalid key specification for instruction'
+			return ([self._encode_opcode(PDIOpcodes.KEY)] + key, 0)
 		return 'Invalid opcode'
 
 	async def _interactive_prompt(self, iface):
